@@ -46,7 +46,13 @@ export default function Home() {
     setCompletedScrapes(0);
 
     // Check if running in Viewer Mode (Vercel deployment)
-    const isViewerMode = process.env.NEXT_PUBLIC_VIEWER_MODE === 'true';
+    // 1. Check env var (set at build time)
+    // 2. Fallback: detect Vercel hostname OR VERCEL env var
+    const isVercelDeploy = typeof window !== 'undefined' && (
+      window.location.hostname.includes('.vercel.app') ||
+      window.location.hostname.includes('vercel.com')
+    );
+    const isViewerMode = process.env.NEXT_PUBLIC_VIEWER_MODE === 'true' || isVercelDeploy;
 
     if (isViewerMode) {
       // VIEWER MODE: Read from Supabase database
