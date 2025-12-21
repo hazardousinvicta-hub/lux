@@ -1,2 +1,3 @@
-export const GEMINI_API_KEY = "AIzaSyAuAyme1N4guccZTdj9zqWgJ9IeflKZDSg";
-export const RESEND_API_KEY = "re_NMru1zjn_AAmmwSGHTcFLaychb3qgtndt";
+// API keys should be stored in .env.local, not in code!
+export const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+export const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
