@@ -45,6 +45,33 @@ export default function Home() {
     setArticles([]);
     setCompletedScrapes(0);
 
+    // Check if running in Viewer Mode (Vercel deployment)
+    const isViewerMode = process.env.NEXT_PUBLIC_VIEWER_MODE === 'true';
+
+    if (isViewerMode) {
+      // VIEWER MODE: Read from Supabase database
+      setTotalScrapes(1);
+      try {
+        const res = await fetch(`/api/news?sector=${sector}`);
+        const data = await res.json();
+        if (data.articles) {
+          setArticles(data.articles);
+        }
+        if (data.summary) {
+          setSummary(data.summary);
+        }
+        setLastUpdated(new Date());
+      } catch (e) {
+        console.error("Error fetching from database", e);
+        setSummary([{ source: "Database", status: "error", count: 0, duration: 0, error: "Failed to fetch" }]);
+      } finally {
+        setCompletedScrapes(1);
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // SCRAPER MODE: Fetch live from sources
     if (sector === "luxury") {
       setTotalScrapes(LUXURY_SOURCES.length);
 
