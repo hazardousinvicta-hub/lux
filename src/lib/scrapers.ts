@@ -269,3 +269,125 @@ export const scrapeCPPLuxury = async (): Promise<ScrapeResult> => {
         return { source: "CPP Luxury", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
     }
 };
+
+// ==================== TECH NEWS SOURCES ====================
+
+export const scrapeHackerNews = async (): Promise<ScrapeResult> => {
+    const start = Date.now();
+    try {
+        console.log("[Hacker News] Fetching RSS...");
+        const res = await fetch("https://hnrss.org/frontpage?count=15");
+        if (!res.ok) throw new Error("RSS fetch failed");
+        const text = await res.text();
+        const $ = cheerio.load(text, { xmlMode: true });
+        const items: any[] = [];
+        $("item").each((_, el) => {
+            const title = $(el).find("title").text().trim();
+            const link = $(el).find("link").text().trim();
+            const pubDate = $(el).find("pubDate").text();
+            const desc = $(el).find("description").text().replace(/<[^>]*>?/gm, '').trim();
+            if (title && link) {
+                items.push({
+                    title,
+                    url: link,
+                    source: "Hacker News",
+                    time: pubDate ? new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
+                    summary: desc.slice(0, 150) + (desc.length > 150 ? "..." : "")
+                });
+            }
+        });
+        return { source: "Hacker News", status: "success", count: items.length, duration: Date.now() - start, items };
+    } catch (e: any) {
+        return { source: "Hacker News", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
+    }
+};
+
+export const scrapeTechCrunch = async (): Promise<ScrapeResult> => {
+    const start = Date.now();
+    try {
+        console.log("[TechCrunch] Fetching RSS...");
+        const res = await fetch("https://techcrunch.com/feed/");
+        if (!res.ok) throw new Error("RSS fetch failed");
+        const text = await res.text();
+        const $ = cheerio.load(text, { xmlMode: true });
+        const items: any[] = [];
+        $("item").slice(0, 15).each((_, el) => {
+            const title = $(el).find("title").text().trim();
+            const link = $(el).find("link").text().trim();
+            const pubDate = $(el).find("pubDate").text();
+            const desc = $(el).find("description").text().replace(/<[^>]*>?/gm, '').trim();
+            if (title && link) {
+                items.push({
+                    title,
+                    url: link,
+                    source: "TechCrunch",
+                    time: pubDate ? new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
+                    summary: desc.slice(0, 150) + (desc.length > 150 ? "..." : "")
+                });
+            }
+        });
+        return { source: "TechCrunch", status: "success", count: items.length, duration: Date.now() - start, items };
+    } catch (e: any) {
+        return { source: "TechCrunch", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
+    }
+};
+
+export const scrapeArsTechnica = async (): Promise<ScrapeResult> => {
+    const start = Date.now();
+    try {
+        console.log("[Ars Technica] Fetching RSS...");
+        const res = await fetch("https://feeds.arstechnica.com/arstechnica/features");
+        if (!res.ok) throw new Error("RSS fetch failed");
+        const text = await res.text();
+        const $ = cheerio.load(text, { xmlMode: true });
+        const items: any[] = [];
+        $("item").slice(0, 15).each((_, el) => {
+            const title = $(el).find("title").text().trim();
+            const link = $(el).find("link").text().trim();
+            const pubDate = $(el).find("pubDate").text();
+            const desc = $(el).find("description").text().replace(/<[^>]*>?/gm, '').trim();
+            if (title && link) {
+                items.push({
+                    title,
+                    url: link,
+                    source: "Ars Technica",
+                    time: pubDate ? new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
+                    summary: desc.slice(0, 150) + (desc.length > 150 ? "..." : "")
+                });
+            }
+        });
+        return { source: "Ars Technica", status: "success", count: items.length, duration: Date.now() - start, items };
+    } catch (e: any) {
+        return { source: "Ars Technica", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
+    }
+};
+
+export const scrapeTechNews = async (): Promise<ScrapeResult> => {
+    const start = Date.now();
+    try {
+        console.log("[Google Tech News] Fetching RSS...");
+        const res = await fetch("https://news.google.com/rss/search?q=semiconductor+chip+technology&hl=en-US&gl=US&ceid=US:en");
+        if (!res.ok) throw new Error("RSS fetch failed");
+        const text = await res.text();
+        const $ = cheerio.load(text, { xmlMode: true });
+        const items: any[] = [];
+        $("item").slice(0, 10).each((_, el) => {
+            const title = $(el).find("title").text().trim();
+            const link = $(el).find("link").text().trim();
+            const pubDate = $(el).find("pubDate").text();
+            const desc = $(el).find("description").text().replace(/<[^>]*>?/gm, '').trim();
+            if (title && link) {
+                items.push({
+                    title,
+                    url: link,
+                    source: "Google Tech News",
+                    time: pubDate ? new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
+                    summary: desc.slice(0, 150) + (desc.length > 150 ? "..." : "")
+                });
+            }
+        });
+        return { source: "Google Tech News", status: "success", count: items.length, duration: Date.now() - start, items };
+    } catch (e: any) {
+        return { source: "Google Tech News", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
+    }
+};

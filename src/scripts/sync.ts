@@ -2,33 +2,50 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
 import {
+    // Luxury sources
+    scrapeCPPLuxury,
+    scrapeJingDaily,
+    scrapePurseBlog,
+    scrapePurseBlogForum,
+    scrapeLuxuryFallback,
+    // Tech sources
+    scrapeLithosgraphein,
+    scrapeCMX,
+    scrapeSemianalysis,
+    scrapeFabricated,
+    scrapeAsianometry,
+    scrapeMoreThanMoore,
+    scrapeHackerNews,
+    scrapeTechCrunch,
+    scrapeArsTechnica,
+    scrapeTechNews
+} from "../lib/scrapers";
+
+// Define source groups by sector
+const LUXURY_SOURCES = [
     scrapeCPPLuxury,
     scrapeJingDaily,
     scrapePurseBlog,
     scrapePurseBlogForum,
     scrapeLuxuryFallback
-} from "../lib/scrapers";
+];
 
-// Make sure internal modules use import() or logic is correct
-// Since we reverted scrapers.ts to not take browser, we can just call them.
+const TECH_SOURCES = [
+    scrapeLithosgraphein,
+    scrapeCMX,
+    scrapeSemianalysis,
+    scrapeFabricated,
+    scrapeAsianometry,
+    scrapeMoreThanMoore,
+    scrapeHackerNews,
+    scrapeTechCrunch,
+    scrapeArsTechnica,
+    scrapeTechNews
+];
 
-async function sync() {
-    console.log("Starting Data Sync...");
+async function syncSector(sectorName: string, sources: (() => Promise<any>)[]) {
+    console.log(`\n========== SYNCING ${sectorName.toUpperCase()} ==========\n`);
 
-    // Lazy load supabase
-    const { supabase } = await import("../lib/supabase");
-
-    // 1. Scrape All
-    console.log("Scraping sources...");
-    const sources = [
-        scrapeCPPLuxury,
-        scrapeJingDaily,
-        scrapePurseBlog,
-        scrapePurseBlogForum,
-        scrapeLuxuryFallback
-    ];
-
-    // Run sequentially to guarantee process isolation
     let allArticles: any[] = [];
     for (const scrapeFn of sources) {
         try {
@@ -44,42 +61,74 @@ async function sync() {
         }
     }
 
-    const articles = allArticles;
-
-    console.log(`Scraped ${articles.length} total articles.`);
+    console.log(`Scraped ${allArticles.length} total articles for ${sectorName}.`);
 
     // Deduplicate by URL
     const uniqueArticles = Array.from(
-        new Map(articles.map(a => [a.url, a])).values()
+        new Map(allArticles.map(a => [a.url, a])).values()
     );
     console.log(`After dedup: ${uniqueArticles.length} unique articles.`);
 
-    if (uniqueArticles.length === 0) {
+    return { sector: sectorName, articles: uniqueArticles };
+}
+
+async function sync() {
+    console.log("Starting Full Data Sync...");
+
+    // Lazy load supabase
+    const { supabase } = await import("../lib/supabase");
+
+    // Sync both sectors
+    const luxuryData = await syncSector("luxury", LUXURY_SOURCES);
+    const techData = await syncSector("semiconductors", TECH_SOURCES);
+
+    // Combine all articles with their sectors
+    const allDbRows: any[] = [];
+
+    for (const article of luxuryData.articles) {
+        allDbRows.push({
+            url: article.url,
+            title: article.title,
+            source: article.source,
+            time: article.time,
+            summary: article.summary || "",
+            sector: "luxury",
+            updated_at: new Date().toISOString()
+        });
+    }
+
+    for (const article of techData.articles) {
+        allDbRows.push({
+            url: article.url,
+            title: article.title,
+            source: article.source,
+            time: article.time,
+            summary: article.summary || "",
+            sector: "semiconductors",
+            updated_at: new Date().toISOString()
+        });
+    }
+
+    console.log(`\n========== UPLOADING TO SUPABASE ==========`);
+    console.log(`Total articles to sync: ${allDbRows.length}`);
+
+    if (allDbRows.length === 0) {
         console.log("No articles found to sync.");
         return;
     }
 
-    // 2. Transform for DB
-    const dbRows = uniqueArticles.map(a => ({
-        url: a.url,
-        title: a.title,
-        source: a.source,
-        time: a.time,
-        summary: a.summary || "",
-        sector: "luxury",
-        updated_at: new Date().toISOString()
-    }));
-
-    // 3. Upsert to Supabase
+    // Upsert to Supabase
     const { data, error } = await supabase
         .from('articles')
-        .upsert(dbRows, { onConflict: 'url', ignoreDuplicates: false })
+        .upsert(allDbRows, { onConflict: 'url', ignoreDuplicates: false })
         .select();
 
     if (error) {
         console.error("Supabase Sync Error:", error);
     } else {
-        console.log(`Successfully synced ${dbRows.length} items to DB.`);
+        console.log(`Successfully synced ${allDbRows.length} items to DB!`);
+        console.log(`  - Luxury: ${luxuryData.articles.length}`);
+        console.log(`  - Tech: ${techData.articles.length}`);
     }
 }
 
