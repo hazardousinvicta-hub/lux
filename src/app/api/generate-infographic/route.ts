@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GEMINI_API_KEY, RESEND_API_KEY } from "@/lib/env";
 import { Resend } from "resend";
-import fs from "fs";
-import path from "path";
+import { supabase } from "@/lib/supabase";
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const resend = new Resend(RESEND_API_KEY);
@@ -75,26 +74,44 @@ export async function POST(req: Request) {
         const id = Date.now().toString();
 
         if (base64Image) {
-            // Save locally
+            // Upload to Supabase Storage instead of local filesystem
             const fileName = `${id}.png`;
-            const publicDir = path.join(process.cwd(), "public", "generations");
-            if (!fs.existsSync(publicDir)) {
-                fs.mkdirSync(publicDir, { recursive: true });
+            const imageBuffer = Buffer.from(base64Image, "base64");
+
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('generations')
+                .upload(fileName, imageBuffer, {
+                    contentType: mimeType,
+                    upsert: true
+                });
+
+            if (uploadError) {
+                console.error("Supabase upload error:", uploadError);
+                // Fallback to base64 data URL
+                imageUrl = `data:${mimeType};base64,${base64Image.substring(0, 100)}...`;
+            } else {
+                // Get public URL
+                const { data: publicUrlData } = supabase.storage
+                    .from('generations')
+                    .getPublicUrl(fileName);
+
+                imageUrl = publicUrlData.publicUrl;
             }
 
-            const filePath = path.join(publicDir, fileName);
-            fs.writeFileSync(filePath, Buffer.from(base64Image, "base64"));
+            // Save metadata to generations table
+            const { error: dbError } = await supabase
+                .from('generations')
+                .insert({
+                    id,
+                    timestamp,
+                    image_url: imageUrl,
+                    summary,
+                    sector: sector || "semiconductors"
+                });
 
-            imageUrl = `/generations/${fileName}`;
-
-            // Save to DB
-            const dbPath = path.join(process.cwd(), "data", "generations.json");
-            let db = [];
-            if (fs.existsSync(dbPath)) {
-                db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
+            if (dbError) {
+                console.error("Supabase DB error:", dbError);
             }
-            db.push({ id, timestamp, imageUrl, summary, sector: sector || "semiconductors" });
-            fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
 
             // Send Email
             if (email) {
