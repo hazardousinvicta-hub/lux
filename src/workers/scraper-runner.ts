@@ -35,6 +35,8 @@ import { sendScraperErrorEmail, sendScraperSummaryEmail } from "../lib/notify";
 
 // ======================== Configuration ========================
 
+const SKIP_JITTER = process.argv.includes('--now');
+
 const CONFIG = {
     // Delay between scrapers (ms)
     SCRAPER_DELAY: 3000,
@@ -42,8 +44,8 @@ const CONFIG = {
     MAX_BACKOFF_HOURS: 8,
     // Random startup jitter range (ms) - 0 to 30 minutes
     STARTUP_JITTER_MS: 30 * 60 * 1000,
-    // Enable startup jitter (set to false for testing)
-    ENABLE_JITTER: process.env.NODE_ENV === 'production',
+    // Enable startup jitter (set to false for testing, or use --now flag)
+    ENABLE_JITTER: process.env.NODE_ENV === 'production' && !SKIP_JITTER,
 };
 
 // ======================== Scraper Registry ========================

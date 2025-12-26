@@ -14,7 +14,8 @@
     "scraper:restart": "pm2 restart lux-scraper",
     "scraper:logs": "pm2 logs lux-scraper",
     "scraper:status": "pm2 status",
-    "scraper:run": "tsx src/workers/scraper-runner.ts"
+    "scraper:run": "tsx src/workers/scraper-runner.ts",
+    "scraper:now": "tsx src/workers/scraper-runner.ts --now"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
