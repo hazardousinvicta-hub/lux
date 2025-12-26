@@ -15,17 +15,16 @@ export async function GET(req: Request) {
 
         if (error) throw error;
 
-        // Transform back to StatusItem format implies we need to aggregate status?
-        // For simpler viewer, we just return articles. The 'SystemStatus' might be fake/static or calculated.
-
-        // Mock summary from data
-        const summary = [
-            { source: "Database", status: "success", count: data.length, duration: 0, items: [] }
-        ];
+        // Group articles by source and count them
+        const sourceCounts: Record<string, number> = {};
+        data.forEach((article: any) => {
+            const srcId = article.source?.toLowerCase().replace(/\s+/g, '') || 'unknown';
+            sourceCounts[srcId] = (sourceCounts[srcId] || 0) + 1;
+        });
 
         return NextResponse.json({
             articles: data,
-            summary
+            sourceCounts
         });
 
     } catch (error: any) {

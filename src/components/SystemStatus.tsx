@@ -1,6 +1,89 @@
-import { Fragment } from "react";
-import { Check, AlertTriangle, XCircle, Clock, Terminal } from "lucide-react";
+"use client";
 
+import { Fragment } from "react";
+import { Check, Loader2, Clock, XCircle } from "lucide-react";
+
+export type SourceState = "pending" | "loading" | "success" | "error";
+
+export interface SourceStatus {
+    id: string;
+    name: string;
+    state: SourceState;
+    count?: number;
+    error?: string;
+}
+
+interface SourceStatusBarProps {
+    sources: SourceStatus[];
+    lastUpdated?: Date | null;
+}
+
+export function SourceStatusBar({ sources, lastUpdated }: SourceStatusBarProps) {
+    if (sources.length === 0) return null;
+
+    const getStateIcon = (state: SourceState) => {
+        switch (state) {
+            case "pending":
+                return <Clock className="w-3 h-3 text-slate-500" />;
+            case "loading":
+                return <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />;
+            case "success":
+                return <Check className="w-3 h-3 text-emerald-500" />;
+            case "error":
+                return <XCircle className="w-3 h-3 text-red-500" />;
+        }
+    };
+
+    const getStateColor = (state: SourceState) => {
+        switch (state) {
+            case "pending":
+                return "border-slate-700 text-slate-500";
+            case "loading":
+                return "border-amber-500/50 text-amber-500";
+            case "success":
+                return "border-emerald-500/30 text-slate-300";
+            case "error":
+                return "border-red-500/30 text-red-400";
+        }
+    };
+
+    const completedCount = sources.filter(s => s.state === "success" || s.state === "error").length;
+    const totalArticles = sources.reduce((sum, s) => sum + (s.count || 0), 0);
+
+    return (
+        <div className="mb-6 font-mono text-[10px]">
+            {/* Compact source pills row */}
+            <div className="flex flex-wrap gap-2 items-center">
+                {sources.map((source) => (
+                    <div
+                        key={source.id}
+                        className={`flex items-center gap-1.5 px-2 py-1 border rounded-sm ${getStateColor(source.state)} transition-all`}
+                        title={source.error || `${source.name}: ${source.count || 0} items`}
+                    >
+                        {getStateIcon(source.state)}
+                        <span className="uppercase tracking-wider">{source.id}</span>
+                        {source.state === "success" && source.count !== undefined && (
+                            <span className="text-slate-500 ml-1">{source.count}</span>
+                        )}
+                    </div>
+                ))}
+
+                {/* Summary stats */}
+                <div className="ml-auto flex items-center gap-4 text-slate-500">
+                    <span>{completedCount}/{sources.length} SOURCES</span>
+                    <span>{totalArticles} ITEMS</span>
+                    {lastUpdated && (
+                        <span className="text-amber-600/50">
+                            {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Keep old component for backwards compatibility
 export interface StatusItem {
     source: string;
     status: "success" | "warning" | "error";
@@ -15,51 +98,14 @@ interface SystemStatusProps {
 }
 
 export function SystemStatus({ summary, lastUpdated }: SystemStatusProps) {
-    if (summary.length === 0) return null;
+    // Convert old format to new format
+    const sources: SourceStatus[] = summary.map(item => ({
+        id: item.source.toLowerCase().replace(/\s+/g, ''),
+        name: item.source,
+        state: item.status === "success" ? "success" : "error",
+        count: item.count,
+        error: item.error
+    }));
 
-    return (
-        <div className="mb-8 rounded-none border border-amber-900/40 bg-black p-4 font-mono text-xs shadow-2xl">
-            <div className="flex items-center gap-2 mb-4 border-b border-amber-900/30 pb-2 text-amber-600/50 uppercase tracking-widest">
-                <Terminal className="w-3 h-3" />
-                <span>System_Diagnostics_v2.0</span>
-            </div>
-
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-8 gap-y-2 text-amber-500/80">
-                <div className="text-slate-500 mb-2">SOURCE</div>
-                <div className="text-slate-500 mb-2 text-right">LATENCY</div>
-                <div className="text-slate-500 mb-2 text-right">STATUS</div>
-
-                {summary.map((item) => (
-                    <Fragment key={item.source}>
-                        <div className="flex items-center gap-2">
-                            <span className={item.status === 'success' ? 'text-amber-500' : 'text-red-500'}>
-                                {item.source.toUpperCase()}
-                            </span>
-                        </div>
-                        <div className="text-right text-slate-500">
-                            {item.duration > 0 ? `${(item.duration / 1000).toFixed(2)}s` : '--'}
-                        </div>
-                        <div className="text-right flex justify-end">
-                            {item.status === "success" ? (
-                                <span className="text-emerald-500 flex items-center gap-1">
-                                    OK <Check className="w-3 h-3" />
-                                </span>
-                            ) : (
-                                <span className="text-red-500 flex items-center gap-1">
-                                    ERR <XCircle className="w-3 h-3" />
-                                </span>
-                            )}
-                        </div>
-                    </Fragment>
-                ))}
-            </div>
-
-            <div className="mt-4 pt-2 border-t border-amber-900/30 flex justify-between text-amber-700">
-                <span>TOTAL_NODES: {summary.length}</span>
-                <span className="flex items-center gap-2">
-                    LAST_SYNC: {lastUpdated ? lastUpdated.toLocaleTimeString() : "--:--:--"}
-                </span>
-            </div>
-        </div>
-    );
+    return <SourceStatusBar sources={sources} lastUpdated={lastUpdated} />;
 }

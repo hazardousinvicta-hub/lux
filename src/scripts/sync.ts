@@ -10,7 +10,7 @@ import {
     scrapeLuxuryFallback,
     // Tech sources
     scrapeLithosgraphein,
-    scrapeCMX,
+    // scrapeCMX,
     scrapeSemianalysis,
     scrapeFabricated,
     scrapeAsianometry,
@@ -32,7 +32,7 @@ const LUXURY_SOURCES = [
 
 const TECH_SOURCES = [
     scrapeLithosgraphein,
-    scrapeCMX,
+    // scrapeCMX,
     scrapeSemianalysis,
     scrapeFabricated,
     scrapeAsianometry,
@@ -77,6 +77,12 @@ async function sync() {
 
     // Lazy load supabase
     const { supabase } = await import("../lib/supabase");
+
+    // Check if we are using service role key
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn("\n[WARNING] SUPABASE_SERVICE_ROLE_KEY is missing from .env.local.");
+        console.warn("Falling back to ANON_KEY which may fail due to RLS policies.\n");
+    }
 
     // Sync both sectors
     const luxuryData = await syncSector("luxury", LUXURY_SOURCES);

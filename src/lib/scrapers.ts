@@ -17,6 +17,8 @@ export const scrapeWithPuppeteer = async (url: string, selector: string, sourceN
         console.log(`[${sourceName}] Launching Puppeteer (Isolated)...`);
         browser = await puppeteer.launch({
             headless: true,
+            // Use system Chromium on Pi if specified
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -24,7 +26,18 @@ export const scrapeWithPuppeteer = async (url: string, selector: string, sourceN
                 '--disable-gpu',
                 '--disable-software-rasterizer',
                 '--no-first-run',
-                '--no-zygote'
+                '--no-zygote',
+                // Pi 5 optimizations
+                '--single-process',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-sync',
+                '--metrics-recording-only',
+                '--disable-default-apps',
+                '--mute-audio',
+                '--no-default-browser-check',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
             ]
         });
         const page = await browser.newPage();
@@ -42,7 +55,10 @@ export const scrapeWithPuppeteer = async (url: string, selector: string, sourceN
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
         // Increase timeout to 60s
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // Small delay for dynamic content
+        await new Promise(r => setTimeout(r, 2000));
 
         console.log(`[${sourceName}] Page loaded, waiting for selector: ${selector}`);
         try {
@@ -58,16 +74,24 @@ export const scrapeWithPuppeteer = async (url: string, selector: string, sourceN
                 '.close-button',
                 '#close-popup',
                 '.newsletter-modal .close',
-                'div[class*="popup"] button'
+                'div[class*="popup"] button',
+                'button#accept-all', // for generic consent
+                '#yDmH0d button' // for YouTube consent potentially
             ];
             for (const pSel of popupSelectors) {
                 if (await page.$(pSel)) {
                     await page.click(pSel);
-                    await new Promise(r => setTimeout(r, 500));
+                    await new Promise(r => setTimeout(r, 1000));
                 }
             }
         } catch (e) {
             // ignore
+        }
+
+        if (sourceName.includes("Asianometry")) {
+            // Scroll a bit for YouTube
+            await page.evaluate(() => window.scrollBy(0, 500));
+            await new Promise(r => setTimeout(r, 1000));
         }
 
         if (sourceName.includes("PurseBlog")) {
@@ -155,11 +179,11 @@ export const scrapeWithPuppeteer = async (url: string, selector: string, sourceN
     }
 };
 
-export const scrapeCMX = async () => scrapeWithPuppeteer("https://newsletter.cmx.io/", "h3 a", "CMX");
-export const scrapeSemianalysis = async () => scrapeWithPuppeteer("https://www.semianalysis.com/", "h1 a", "SemiAnalysis");
-export const scrapeFabricated = async () => scrapeWithPuppeteer("https://www.fabricatedknowledge.com/", "h3 a", "Fabricated Knowledge");
+// export const scrapeCMX = async () => scrapeWithPuppeteer("https://newsletter.cmx.io/", "h3 a", "CMX");
+export const scrapeSemianalysis = async () => scrapeWithPuppeteer("https://newsletter.semianalysis.com/", "a[data-testid=\"post-preview-title\"]", "SemiAnalysis");
+export const scrapeFabricated = async () => scrapeWithPuppeteer("https://www.fabricatedknowledge.com/", "a[data-testid=\"post-preview-title\"]", "Fabricated Knowledge");
 export const scrapeAsianometry = async () => scrapeWithPuppeteer("https://www.youtube.com/@Asianometry/videos", "a#video-title-link", "Asianometry");
-export const scrapeMoreThanMoore = async () => scrapeWithPuppeteer("https://www.morethanmoore.com/", "h3 a", "More Than Moore");
+export const scrapeMoreThanMoore = async () => scrapeWithPuppeteer("https://morethanmoore.substack.com/", "a[data-testid=\"post-preview-title\"]", "More Than Moore");
 export const scrapeJingDaily = async () => scrapeWithPuppeteer("https://jingdaily.com/", "h3.elementor-post__title a", "Jing Daily");
 
 export const scrapePurseBlog = async () => {

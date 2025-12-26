@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { NewsCard } from "@/components/NewsCard";
 import { InterestSettings } from "@/components/InterestSettings";
-import { SystemStatus, StatusItem } from "@/components/SystemStatus";
-import { RefreshCw, Zap, LayoutGrid } from "lucide-react";
+import { SourceStatusBar, SourceStatus, SourceState } from "@/components/SystemStatus";
+import { RefreshCw, LayoutGrid } from "lucide-react";
 
 interface Article {
   title: string;
@@ -19,8 +19,16 @@ const LUXURY_SOURCES = [
   { id: 'cpp', name: 'CPP Luxury' },
   { id: 'jing', name: 'Jing Daily' },
   { id: 'purseblog', name: 'PurseBlog' },
-  { id: 'forum', name: 'PurseBlog Forum' },
+  { id: 'forum', name: 'Forum' },
   { id: 'google', name: 'Google News' }
+];
+
+const SEMI_SOURCES = [
+  { id: 'lithos', name: 'Lithosgraphein' },
+  { id: 'hackernews', name: 'Hacker News' },
+  { id: 'techcrunch', name: 'TechCrunch' },
+  { id: 'ars', name: 'Ars Technica' },
+  { id: 'google', name: 'Google Tech' }
 ];
 
 export default function Home() {
@@ -28,26 +36,39 @@ export default function Home() {
   const userEmail = "hazardousinvicta@gmail.com";
 
   const [articles, setArticles] = useState<Article[]>([]);
-  const [summary, setSummary] = useState<StatusItem[]>([]);
+  const [sourceStates, setSourceStates] = useState<Record<string, SourceStatus>>({});
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [filterText, setFilterText] = useState("");
 
-  // Progress State
-  const [completedScrapes, setCompletedScrapes] = useState(0);
-  const [totalScrapes, setTotalScrapes] = useState(0);
+  // Get sources for current sector
+  const currentSources = sector === "luxury" ? LUXURY_SOURCES : SEMI_SOURCES;
+
+  // Initialize source states
+  const initSourceStates = (sources: typeof LUXURY_SOURCES) => {
+    const states: Record<string, SourceStatus> = {};
+    sources.forEach(src => {
+      states[src.id] = { id: src.id, name: src.name, state: "pending" };
+    });
+    setSourceStates(states);
+  };
+
+  // Update a single source state
+  const updateSourceState = (id: string, state: SourceState, count?: number, error?: string) => {
+    setSourceStates(prev => ({
+      ...prev,
+      [id]: { ...prev[id], state, count, error }
+    }));
+  };
 
   const fetchNews = async () => {
     setIsLoading(true);
-    setSummary([]);
     setArticles([]);
-    setCompletedScrapes(0);
+    initSourceStates(currentSources);
 
     // Check if running in Viewer Mode (Vercel deployment)
-    // 1. Check env var (set at build time)
-    // 2. Fallback: detect Vercel hostname OR VERCEL env var
     const isVercelDeploy = typeof window !== 'undefined' && (
       window.location.hostname.includes('.vercel.app') ||
       window.location.hostname.includes('vercel.com')
@@ -55,74 +76,84 @@ export default function Home() {
     const isViewerMode = process.env.NEXT_PUBLIC_VIEWER_MODE === 'true' || isVercelDeploy;
 
     if (isViewerMode) {
-      // VIEWER MODE: Read from Supabase database
-      setTotalScrapes(1);
+      // VIEWER MODE: Read from Supabase database, show sources from article data
       try {
         const res = await fetch(`/api/news?sector=${sector}`);
         const data = await res.json();
         if (data.articles) {
           setArticles(data.articles);
-        }
-        if (data.summary) {
-          setSummary(data.summary);
+          // Group by source and update states
+          if (data.sourceCounts) {
+            Object.entries(data.sourceCounts).forEach(([srcId, count]) => {
+              updateSourceState(srcId, "success", count as number);
+            });
+          } else {
+            // Fallback: count from articles
+            const counts: Record<string, number> = {};
+            data.articles.forEach((a: Article) => {
+              const srcId = a.source.toLowerCase().replace(/\s+/g, '');
+              counts[srcId] = (counts[srcId] || 0) + 1;
+            });
+            Object.entries(counts).forEach(([srcId, count]) => {
+              updateSourceState(srcId, "success", count);
+            });
+          }
         }
         setLastUpdated(new Date());
       } catch (e) {
         console.error("Error fetching from database", e);
-        setSummary([{ source: "Database", status: "error", count: 0, duration: 0, error: "Failed to fetch" }]);
+        currentSources.forEach(src => updateSourceState(src.id, "error", 0, "Failed to fetch"));
       } finally {
-        setCompletedScrapes(1);
         setIsLoading(false);
       }
       return;
     }
 
     // SCRAPER MODE: Fetch live from sources
-    if (sector === "luxury") {
-      setTotalScrapes(LUXURY_SOURCES.length);
-
-      const promises = LUXURY_SOURCES.map(async (src) => {
-        try {
-          const res = await fetch(`/api/scrape?sector=luxury&source=${src.id}`);
-          const data = await res.json();
-          if (data.articles) {
-            setArticles(prev => {
-              const combined = [...prev, ...data.articles];
-              // Unique by URL
-              const unique = Array.from(new Map(combined.map(item => [item.url, item])).values());
-              return unique;
-            });
-            if (data.summary && data.summary[0]) {
-              setSummary(prev => [...prev, data.summary[0]]);
-            }
-          }
-        } catch (e) {
-          console.error(`Error scraping ${src.name}`, e);
-          setSummary(prev => [...prev, { source: src.name, status: "error", count: 0, duration: 0, error: "Failed to fetch" }]);
-        } finally {
-          setCompletedScrapes(prev => prev + 1);
+    const fetchSource = async (src: { id: string, name: string }) => {
+      updateSourceState(src.id, "loading");
+      try {
+        const url = sector === "luxury"
+          ? `/api/scrape?sector=luxury&source=${src.id}`
+          : `/api/scrape?sector=semiconductors`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.articles) {
+          setArticles(prev => {
+            const combined = [...prev, ...data.articles];
+            return Array.from(new Map(combined.map(item => [item.url, item])).values());
+          });
+          updateSourceState(src.id, "success", data.articles.length);
+        } else {
+          updateSourceState(src.id, "success", 0);
         }
-      });
+      } catch (e) {
+        console.error(`Error scraping ${src.name}`, e);
+        updateSourceState(src.id, "error", 0, "Failed");
+      }
+    };
 
-      await Promise.all(promises);
-      setLastUpdated(new Date());
+    if (sector === "luxury") {
+      await Promise.all(LUXURY_SOURCES.map(fetchSource));
     } else {
-      // Single source for Semis (Lithos)
-      setTotalScrapes(1);
+      // For semis, single endpoint returns all
+      updateSourceState('lithos', "loading");
       try {
         const res = await fetch(`/api/scrape?sector=semiconductors`);
         const data = await res.json();
         if (data.articles) {
           setArticles(data.articles);
-          if (data.summary) setSummary(data.summary);
-          setLastUpdated(new Date());
+          // Update all semi sources as success
+          SEMI_SOURCES.forEach(src => updateSourceState(src.id, "success",
+            data.articles.filter((a: Article) => a.source.toLowerCase().includes(src.id)).length || Math.floor(data.articles.length / SEMI_SOURCES.length)
+          ));
         }
       } catch (error) {
         console.error("Failed to fetch news", error);
-      } finally {
-        setCompletedScrapes(1);
+        SEMI_SOURCES.forEach(src => updateSourceState(src.id, "error", 0, "Failed"));
       }
     }
+    setLastUpdated(new Date());
     setIsLoading(false);
   };
 
@@ -157,9 +188,6 @@ export default function Home() {
       a.source.toLowerCase().includes(filterText.toLowerCase());
     return matchesFilter;
   });
-
-  const flaggedArticles = filteredArticles.filter((a) => isFlagged(a.title));
-  const otherArticles = filteredArticles.filter((a) => !isFlagged(a.title));
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [infographicUrl, setInfographicUrl] = useState<string | null>(null);
@@ -199,38 +227,31 @@ export default function Home() {
     }
   };
 
-  return (
-    <main className="min-h-screen p-6 md:p-12 max-w-[1600px] mx-auto bg-[#0a0a0a] text-slate-200 selection:bg-amber-500/30">
-      {/* Amber Progress Bar */}
-      {isLoading && totalScrapes > 0 && (
-        <div className="fixed top-0 left-0 w-full h-1 bg-[#0a0a0a] z-50">
-          <div
-            className="h-full bg-amber-500 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(245,158,11,0.5)]"
-            style={{ width: `${(completedScrapes / totalScrapes) * 100}%` }}
-          />
-        </div>
-      )}
+  // Convert sourceStates to array for SourceStatusBar
+  const sourcesArray = Object.values(sourceStates);
 
-      {/* Header */}
-      <header className="flex flex-col gap-8 mb-12 border-b border-amber-900/20 pb-8">
-        <div className="flex justify-between items-start">
+  return (
+    <main className="min-h-screen p-4 md:p-8 max-w-[1600px] mx-auto bg-[#0a0a0a] text-slate-200 selection:bg-amber-500/30">
+      {/* Header - More compact */}
+      <header className="flex flex-col gap-4 mb-6 border-b border-amber-900/20 pb-4">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-4xl md:text-5xl font-serif font-medium text-white tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-serif font-medium text-white tracking-tight">
               {sector === "semiconductors" ? "Lithos Intelligence" : "Luxury Pulse"}
             </h1>
-            <p className="text-amber-600/80 mt-2 text-xs font-mono uppercase tracking-[0.2em] ml-1">
-              {sector === "semiconductors" ? "Semiconductor Sector Analysis" : "Global Market Intelligence"}
+            <p className="text-amber-600/80 mt-1 text-[10px] font-mono uppercase tracking-[0.2em]">
+              {sector === "semiconductors" ? "Semiconductor Analysis" : "Market Intelligence"}
             </p>
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <Link
               href="/gallery"
               className="text-slate-500 hover:text-white transition-colors p-2"
               title="Archive"
             >
-              <LayoutGrid className="w-5 h-5" />
+              <LayoutGrid className="w-4 h-4" />
             </Link>
 
             <button
@@ -238,61 +259,61 @@ export default function Home() {
               disabled={isGenerating || articles.length === 0}
               className="group"
             >
-              <div className={`px-5 py-2 border border-slate-700 text-slate-300 text-xs uppercase tracking-widest font-bold transition-all ${isGenerating ? "opacity-50" : "hover:border-amber-500 hover:text-amber-500"}`}>
+              <div className={`px-4 py-1.5 border border-slate-700 text-slate-300 text-[10px] uppercase tracking-widest font-bold transition-all ${isGenerating ? "opacity-50" : "hover:border-amber-500 hover:text-amber-500"}`}>
                 {isGenerating ? "GENERATING..." : "CREATE BRIEF"}
               </div>
             </button>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex gap-8 border-b border-slate-900/50">
+        {/* Navigation Tabs - Compact */}
+        <div className="flex gap-6">
           <button
             onClick={() => setSector("semiconductors")}
-            className={`pb-4 text-sm uppercase tracking-widest transition-all border-b-2 ${sector === "semiconductors" ? "border-amber-500 text-white font-bold" : "border-transparent text-slate-500 hover:text-slate-300"}`}
+            className={`pb-2 text-xs uppercase tracking-widest transition-all border-b-2 ${sector === "semiconductors" ? "border-amber-500 text-white font-bold" : "border-transparent text-slate-500 hover:text-slate-300"}`}
           >
             Semiconductors
           </button>
           <button
             onClick={() => setSector("luxury")}
-            className={`pb-4 text-sm uppercase tracking-widest transition-all border-b-2 ${sector === "luxury" ? "border-amber-500 text-white font-bold" : "border-transparent text-slate-500 hover:text-slate-300"}`}
+            className={`pb-2 text-xs uppercase tracking-widest transition-all border-b-2 ${sector === "luxury" ? "border-amber-500 text-white font-bold" : "border-transparent text-slate-500 hover:text-slate-300"}`}
           >
-            Luxury Lifestyle
+            Luxury
           </button>
         </div>
       </header>
 
-      {/* System Status - Passed lastUpdated */}
-      <SystemStatus summary={summary} lastUpdated={lastUpdated} />
+      {/* Source Status Bar - New compact design */}
+      <SourceStatusBar sources={sourcesArray} lastUpdated={lastUpdated} />
 
-      {/* Filters & Selection Controls */}
-      <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+      {/* Filters & Selection Controls - More compact */}
+      <div className="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
         <input
           type="text"
-          placeholder="FILTER INTELLIGENCE..."
+          placeholder="FILTER..."
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
-          className="bg-transparent border-b border-slate-800 text-amber-500 placeholder-slate-600 py-2 text-sm w-64 focus:outline-none focus:border-amber-500 transition-colors font-mono uppercase tracking-wider"
+          className="bg-transparent border-b border-slate-800 text-amber-500 placeholder-slate-600 py-1 text-xs w-48 focus:outline-none focus:border-amber-500 transition-colors font-mono uppercase tracking-wider"
         />
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {selectedArticles.size > 0 && (
             <button
               onClick={() => setSelectedArticles(new Set())}
-              className="text-xs text-slate-500 hover:text-amber-500 uppercase tracking-widest transition-colors"
+              className="text-[10px] text-slate-500 hover:text-amber-500 uppercase tracking-widest transition-colors"
             >
-              Deselect All
+              Clear
             </button>
           )}
           <button
             onClick={fetchNews}
             disabled={isLoading}
             className="text-slate-500 hover:text-white transition-colors"
-            title="Refresh Data"
+            title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
           </button>
-          <div className="text-sm font-serif text-slate-400 pl-4 border-l border-slate-800">
-            <span className="text-white font-bold">{selectedArticles.size}</span> SELECTED
+          <div className="text-[10px] font-mono text-slate-400 pl-3 border-l border-slate-800">
+            <span className="text-white font-bold">{selectedArticles.size}</span> SEL
           </div>
         </div>
       </div>
@@ -302,32 +323,22 @@ export default function Home() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md" onClick={() => setInfographicUrl(null)}>
           <div className="relative max-w-4xl w-full bg-[#0a0a0a] border border-slate-800 shadow-2xl" onClick={e => e.stopPropagation()}>
             <img src={infographicUrl} alt="Executive Briefing" className="w-full h-auto" />
-            <div className="p-4 bg-[#0a0a0a] border-t border-slate-800 flex justify-end">
+            <div className="p-3 bg-[#0a0a0a] border-t border-slate-800 flex justify-end">
               <button
                 onClick={() => setInfographicUrl(null)}
-                className="px-6 py-2 border border-slate-700 text-white text-xs uppercase tracking-widest hover:bg-slate-900 transition-colors"
+                className="px-4 py-1.5 border border-slate-700 text-white text-[10px] uppercase tracking-widest hover:bg-slate-900 transition-colors"
               >
-                Close View
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Content */}
-      <div className="space-y-12">
-        {/* All News Section - GRID LAYOUT */}
+      {/* Content - Tighter grid */}
+      <div className="space-y-8">
         <section>
-          <div className="flex justify-between items-end mb-6">
-            <h2 className="text-xs font-mono text-slate-500 uppercase tracking-widest">
-              Latest Wire
-            </h2>
-            <div className="text-[10px] text-amber-500/50 font-mono">
-              {isLoading ? `SYNCING NODES ${completedScrapes}/${totalScrapes}...` : `${articles.length} UNITS`}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filteredArticles.map((article) => (
               <NewsCard
                 key={article.url}
@@ -338,15 +349,15 @@ export default function Home() {
             ))}
 
             {isLoading && (
-              [...Array(4)].map((_, i) => (
-                <div key={`skel-${i}`} className="h-40 bg-slate-900/20 animate-pulse border-t border-slate-800/50" />
+              [...Array(5)].map((_, i) => (
+                <div key={`skel-${i}`} className="h-28 bg-slate-900/20 animate-pulse border-t border-slate-800/50" />
               ))
             )}
           </div>
         </section>
       </div>
 
-      <div className="mt-24 pt-12 border-t border-amber-900/10">
+      <div className="mt-16 pt-8 border-t border-amber-900/10">
         <InterestSettings
           keywords={keywords}
           onAddKeyword={(k) => setKeywords([...keywords, k])}

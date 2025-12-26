@@ -7,7 +7,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync": "tsx src/scripts/sync.ts",
+    "scraper:start": "pm2 start ecosystem.config.cjs",
+    "scraper:stop": "pm2 stop lux-scraper",
+    "scraper:restart": "pm2 restart lux-scraper",
+    "scraper:logs": "pm2 logs lux-scraper",
+    "scraper:status": "pm2 status",
+    "scraper:run": "tsx src/workers/scraper-runner.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -33,6 +40,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.3",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

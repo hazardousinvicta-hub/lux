@@ -87,8 +87,8 @@ export async function POST(req: Request) {
 
             if (uploadError) {
                 console.error("Supabase upload error:", uploadError);
-                // Fallback to base64 data URL
-                imageUrl = `data:${mimeType};base64,${base64Image.substring(0, 100)}...`;
+                // Fallback to base64 data URL (full image)
+                imageUrl = `data:${mimeType};base64,${base64Image}`;
             } else {
                 // Get public URL
                 const { data: publicUrlData } = supabase.storage
