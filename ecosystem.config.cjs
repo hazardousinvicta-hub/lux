@@ -1,25 +1,29 @@
 /**
- * PM2 Ecosystem Configuration for Lux Scrapers
+ * PM2 Ecosystem Configuration for Lux Daemon
  * 
  * Run with: pm2 start ecosystem.config.cjs
  * 
- * This configuration runs the scraper worker on a cron schedule.
- * The worker handles its own graceful shutdown and backoff logic.
+ * This runs a continuous daemon that scrapes sources randomly
+ * and deep scrapes individual articles.
  */
 
 module.exports = {
     apps: [{
-        name: 'lux-scraper',
+        name: 'lux-daemon',
         script: 'npx',
-        args: 'tsx src/workers/scraper-runner.ts',
+        args: 'tsx src/workers/daemon.ts',
         cwd: process.env.PWD || '/home/pi/lux',
 
-        // Cron schedule: Every 2 hours at the top of the hour
-        // The worker adds its own 0-30min random jitter
-        cron_restart: '0 */2 * * *',
+        // Continuous mode - auto-restart on crash
+        autorestart: true,
 
-        // Don't auto-restart on exit - let cron handle scheduling
-        autorestart: false,
+        // No cron - runs forever
+        cron_restart: undefined,
+
+        // Restart limits to prevent rapid crash loops
+        max_restarts: 10,
+        min_uptime: '30s',
+        restart_delay: 5000,  // 5 seconds between restarts
 
         // Memory limit - restart if exceeded (OOM protection)
         max_memory_restart: '512M',
@@ -30,13 +34,13 @@ module.exports = {
         },
 
         // Logging
-        error_file: './logs/scraper-error.log',
-        out_file: './logs/scraper-out.log',
+        error_file: './logs/daemon-error.log',
+        out_file: './logs/daemon-out.log',
         log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
         merge_logs: true,
 
-        // Graceful shutdown
-        kill_timeout: 60000,  // 60 seconds for graceful shutdown
+        // Graceful shutdown - give time to close browser
+        kill_timeout: 60000,  // 60 seconds
         wait_ready: false,
         listen_timeout: 10000,
     }]

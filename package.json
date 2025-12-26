@@ -8,14 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "sync": "tsx src/scripts/sync.ts",
-    "scraper:start": "pm2 start ecosystem.config.cjs",
-    "scraper:stop": "pm2 stop lux-scraper",
-    "scraper:restart": "pm2 restart lux-scraper",
-    "scraper:logs": "pm2 logs lux-scraper",
-    "scraper:status": "pm2 status",
-    "scraper:run": "tsx src/workers/scraper-runner.ts",
-    "scraper:now": "tsx src/workers/scraper-runner.ts --now"
+    "daemon": "tsx src/workers/daemon.ts",
+    "daemon:start": "pm2 start ecosystem.config.cjs",
+    "daemon:stop": "pm2 stop lux-daemon",
+    "daemon:restart": "pm2 restart lux-daemon",
+    "daemon:logs": "pm2 logs lux-daemon",
+    "daemon:status": "pm2 status"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

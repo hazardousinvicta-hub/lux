@@ -186,10 +186,49 @@ export const scrapeAsianometry = async () => scrapeWithPuppeteer("https://www.yo
 export const scrapeMoreThanMoore = async () => scrapeWithPuppeteer("https://morethanmoore.substack.com/", "a[data-testid=\"post-preview-title\"]", "More Than Moore");
 export const scrapeJingDaily = async () => scrapeWithPuppeteer("https://jingdaily.com/", "h3.elementor-post__title a", "Jing Daily");
 
-export const scrapePurseBlog = async () => {
-    const blogRes = await scrapeWithPuppeteer("https://www.purseblog.com/", "h2.post-title a", "PurseBlog");
-    if (blogRes.count > 0) return blogRes;
-    return scrapeWithPuppeteer("https://www.purseblog.com/", "article h2 a", "PurseBlog");
+export const scrapePurseBlog = async (): Promise<ScrapeResult> => {
+    const start = Date.now();
+    try {
+        console.log("[PurseBlog] Fetching RSS feed...");
+        const res = await fetch("https://www.purseblog.com/feed/", {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+        });
+        if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
+        const text = await res.text();
+        const $ = cheerio.load(text, { xmlMode: true });
+
+        const items: any[] = [];
+        $("item").slice(0, 15).each((_, el) => {
+            const title = $(el).find("title").text().trim();
+            const link = $(el).find("link").text().trim();
+            const pubDate = $(el).find("pubDate").text();
+            const desc = $(el).find("description").text().replace(/<[^>]*>?/gm, '').trim();
+
+            if (title && link) {
+                items.push({
+                    title,
+                    url: link,
+                    source: "PurseBlog",
+                    time: pubDate ? new Date(pubDate).toLocaleDateString() : "Recent",
+                    summary: desc.slice(0, 150) + (desc.length > 150 ? "..." : "")
+                });
+            }
+        });
+
+        console.log(`[PurseBlog] Found ${items.length} items from RSS.`);
+        return {
+            source: "PurseBlog",
+            status: items.length > 0 ? "success" : "warning",
+            count: items.length,
+            duration: Date.now() - start,
+            items
+        };
+    } catch (e: any) {
+        console.error("[PurseBlog] RSS Error:", e.message);
+        return { source: "PurseBlog", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
+    }
 };
 
 export const scrapePurseBlogForum = async (): Promise<ScrapeResult> => {
@@ -203,30 +242,44 @@ export const scrapePurseBlogForum = async (): Promise<ScrapeResult> => {
 export const scrapeLithosgraphein = async (): Promise<ScrapeResult> => {
     const start = Date.now();
     try {
-        console.log("[Lithosgraphein] Fetching RSS...");
-        const res = await fetch("https://lithosgraphein.substack.com/feed");
-        if (!res.ok) throw new Error("RSS fetch failed");
-        const text = await res.text();
-        const $ = cheerio.load(text, { xmlMode: true });
+        console.log("[Lithosgraphein] Fetching homepage...");
+        const res = await fetch("https://lithosgraphein.com/", {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        });
+        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+        const html = await res.text();
+        const $ = cheerio.load(html);
 
         const items: any[] = [];
-        $("item").each((_, el) => {
-            const title = $(el).find("title").text().trim();
-            const link = $(el).find("link").text().trim();
-            const pubDate = $(el).find("pubDate").text();
-            const desc = $(el).find("description").text().replace(/<[^>]*>?/gm, '').trim();
-            if (title && link) {
+        $("a").each((_, el) => {
+            const text = $(el).text().trim();
+            const href = $(el).attr("href");
+            // Filter for meaningful external links (news sources)
+            if (href && href.startsWith("http") && !href.includes("lithosgraphein") && text.length > 10 && text.length < 150) {
+                // Extract domain as a hint
+                let domain = "";
+                try {
+                    domain = new URL(href).hostname.replace("www.", "");
+                } catch { }
+
                 items.push({
-                    title,
-                    url: link,
+                    title: text,
+                    url: href,
                     source: "Lithosgraphein",
-                    time: pubDate ? new Date(pubDate).toLocaleDateString() : "Recent",
-                    summary: desc.slice(0, 150) + (desc.length > 150 ? "..." : "")
+                    time: "Recent",
+                    summary: domain ? `Via ${domain}` : ""
                 });
             }
         });
-        return { source: "Lithosgraphein", status: "success", count: items.length, duration: Date.now() - start, items };
+
+        // Dedupe by URL, limit to 25 items
+        const uniqueItems = Array.from(new Map(items.map(i => [i.url, i])).values()).slice(0, 25);
+        console.log(`[Lithosgraphein] Found ${uniqueItems.length} unique items.`);
+        return { source: "Lithosgraphein", status: uniqueItems.length > 0 ? "success" : "warning", count: uniqueItems.length, duration: Date.now() - start, items: uniqueItems };
     } catch (e: any) {
+        console.error("[Lithosgraphein] Error:", e.message);
         return { source: "Lithosgraphein", status: "error", count: 0, duration: Date.now() - start, error: e.message, items: [] };
     }
 };

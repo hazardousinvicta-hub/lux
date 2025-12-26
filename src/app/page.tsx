@@ -15,6 +15,31 @@ interface Article {
   summary?: string;
 }
 
+// Source name -> frontend ID mapping
+const normalizeSourceId = (sourceName: string): string => {
+  const normalized = sourceName.toLowerCase().replace(/\s+/g, '').replace(/[()]/g, '');
+  const map: Record<string, string> = {
+    // Luxury
+    'cppluxury': 'cpp',
+    'jingdaily': 'jing',
+    'purseblog': 'purseblog',
+    'purseblogforum': 'forum',
+    'googlenews': 'google',
+    'googlenewsluxury': 'google',
+    // Tech
+    'lithosgraphein': 'lithos',
+    'semianalysis': 'semianalysis',
+    'fabricatedknowledge': 'fabricated',
+    'asianometry': 'asianometry',
+    'morethanmoore': 'morethanmoore',
+    'hackernews': 'hackernews',
+    'techcrunch': 'techcrunch',
+    'arstechnica': 'ars',
+    'googletechnews': 'google',
+  };
+  return map[normalized] || normalized;
+};
+
 const LUXURY_SOURCES = [
   { id: 'cpp', name: 'CPP Luxury' },
   { id: 'jing', name: 'Jing Daily' },
@@ -24,7 +49,9 @@ const LUXURY_SOURCES = [
 ];
 
 const SEMI_SOURCES = [
-  { id: 'lithos', name: 'Lithosgraphein' },
+  { id: 'lithos', name: 'Lithos' },
+  { id: 'semianalysis', name: 'SemiAnalysis' },
+  { id: 'fabricated', name: 'Fabricated' },
   { id: 'hackernews', name: 'Hacker News' },
   { id: 'techcrunch', name: 'TechCrunch' },
   { id: 'ars', name: 'Ars Technica' },
@@ -68,93 +95,34 @@ export default function Home() {
     setArticles([]);
     initSourceStates(currentSources);
 
-    // Check if running in Viewer Mode (Vercel deployment)
-    const isVercelDeploy = typeof window !== 'undefined' && (
-      window.location.hostname.includes('.vercel.app') ||
-      window.location.hostname.includes('vercel.com')
-    );
-    const isViewerMode = process.env.NEXT_PUBLIC_VIEWER_MODE === 'true' || isVercelDeploy;
+    try {
+      const res = await fetch(`/api/news?sector=${sector}`);
+      const data = await res.json();
 
-    if (isViewerMode) {
-      // VIEWER MODE: Read from Supabase database, show sources from article data
-      try {
-        const res = await fetch(`/api/news?sector=${sector}`);
-        const data = await res.json();
-        if (data.articles) {
-          setArticles(data.articles);
-          // Group by source and update states
-          if (data.sourceCounts) {
-            Object.entries(data.sourceCounts).forEach(([srcId, count]) => {
-              updateSourceState(srcId, "success", count as number);
-            });
-          } else {
-            // Fallback: count from articles
-            const counts: Record<string, number> = {};
-            data.articles.forEach((a: Article) => {
-              const srcId = a.source.toLowerCase().replace(/\s+/g, '');
-              counts[srcId] = (counts[srcId] || 0) + 1;
-            });
-            Object.entries(counts).forEach(([srcId, count]) => {
-              updateSourceState(srcId, "success", count);
-            });
-          }
-        }
-        setLastUpdated(new Date());
-      } catch (e) {
-        console.error("Error fetching from database", e);
-        currentSources.forEach(src => updateSourceState(src.id, "error", 0, "Failed to fetch"));
-      } finally {
-        setIsLoading(false);
+      if (data.articles) {
+        setArticles(data.articles);
+
+        // Count articles by source
+        const counts: Record<string, number> = {};
+        data.articles.forEach((a: Article) => {
+          const srcId = normalizeSourceId(a.source);
+          counts[srcId] = (counts[srcId] || 0) + 1;
+        });
+
+        // Update all source states with counts
+        currentSources.forEach(src => {
+          const count = counts[src.id] || 0;
+          updateSourceState(src.id, "success", count);
+        });
       }
-      return;
+
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.error("Error fetching from database", e);
+      currentSources.forEach(src => updateSourceState(src.id, "error", 0, "Failed to fetch"));
+    } finally {
+      setIsLoading(false);
     }
-
-    // SCRAPER MODE: Fetch live from sources
-    const fetchSource = async (src: { id: string, name: string }) => {
-      updateSourceState(src.id, "loading");
-      try {
-        const url = sector === "luxury"
-          ? `/api/scrape?sector=luxury&source=${src.id}`
-          : `/api/scrape?sector=semiconductors`;
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.articles) {
-          setArticles(prev => {
-            const combined = [...prev, ...data.articles];
-            return Array.from(new Map(combined.map(item => [item.url, item])).values());
-          });
-          updateSourceState(src.id, "success", data.articles.length);
-        } else {
-          updateSourceState(src.id, "success", 0);
-        }
-      } catch (e) {
-        console.error(`Error scraping ${src.name}`, e);
-        updateSourceState(src.id, "error", 0, "Failed");
-      }
-    };
-
-    if (sector === "luxury") {
-      await Promise.all(LUXURY_SOURCES.map(fetchSource));
-    } else {
-      // For semis, single endpoint returns all
-      updateSourceState('lithos', "loading");
-      try {
-        const res = await fetch(`/api/scrape?sector=semiconductors`);
-        const data = await res.json();
-        if (data.articles) {
-          setArticles(data.articles);
-          // Update all semi sources as success
-          SEMI_SOURCES.forEach(src => updateSourceState(src.id, "success",
-            data.articles.filter((a: Article) => a.source.toLowerCase().includes(src.id)).length || Math.floor(data.articles.length / SEMI_SOURCES.length)
-          ));
-        }
-      } catch (error) {
-        console.error("Failed to fetch news", error);
-        SEMI_SOURCES.forEach(src => updateSourceState(src.id, "error", 0, "Failed"));
-      }
-    }
-    setLastUpdated(new Date());
-    setIsLoading(false);
   };
 
   useEffect(() => {
